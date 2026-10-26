@@ -1,0 +1,385 @@
+# The hand-written question set.
+#
+# Each entry is a question a visitor might ask, with the SQL we consider correct. The
+# evaluation harness (evals/run.py) runs gold_sql at test time and compares result rows with
+# what the model's SQL returns, so no answers are stored here and new data never breaks
+# an entry. Traps have no gold_sql; they say what must happen instead.
+#
+# Rules: fixed dates (questions about "2026" are fine because both sides see the same
+# data); filter on begin_mpt, never begin_utc; the examples shown to the model in its
+# prompt must never come from this file. Levels: easy 10, medium 11, hard 6, trap 3.
+
+# ---- Price basics -------------------------------------------------------------------
+
+- id: q001
+  question: "What was the average pool price in September 2026?"
+  level: easy
+  tags: [price, month, average]
+  gold_sql: |
+    SELECT round(avg(pool_price), 2) AS avg_price
+    FROM pool_price
+    WHERE begin_mpt >= '2026-09-01' AND begin_mpt < '2026-10-01';
+
+- id: q002
+  question: "What was the highest pool price in 2025, and when was the first hour it happened?"
+  level: easy
+  tags: [price, max, timestamp]
+  gold_sql: |
+    SELECT begin_mpt, pool_price
+    FROM pool_price
+    WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01'
+    ORDER BY pool_price DESC, begin_mpt
+    LIMIT 1;
+
+- id: q003
+  question: "How many hours in 2025 was the pool price exactly $0?"
+  level: easy
+  tags: [price, count, threshold]
+  gold_sql: |
+    SELECT count(*) AS hours
+    FROM pool_price
+    WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01' AND pool_price = 0;
+
+- id: q004
+  question: "How many hours in August 2024 was the pool price above $500 per MWh?"
+  level: easy
+  tags: [price, count, threshold, month]
+  gold_sql: |
+    SELECT count(*) AS hours
+    FROM pool_price
+    WHERE begin_mpt >= '2024-08-01' AND begin_mpt < '2024-09-01' AND pool_price > 500;
+
+- id: q005
+  question: "What was the pool price at 5 pm on December 11, 2025?"
+  level: easy
+  tags: [price, single-hour, timezone]
+  gold_sql: |
+    SELECT pool_price
+    FROM pool_price
+    WHERE begin_mpt = '2025-12-11 17:00';
+
+# ---- Demand basics ------------------------------------------------------------------
+
+- id: q006
+  question: "What was the highest demand ever recorded in Alberta, and when?"
+  level: easy
+  tags: [demand, max, timestamp]
+  gold_sql: |
+    SELECT begin_mpt, actual_load_mw
+    FROM system_load
+    WHERE actual_load_mw IS NOT NULL
+    ORDER BY actual_load_mw DESC, begin_mpt
+    LIMIT 1;
+
+- id: q007
+  question: "What was the average demand in 2025, in MW?"
+  level: easy
+  tags: [demand, average, year]
+  gold_sql: |
+    SELECT round(avg(actual_load_mw)) AS avg_mw
+    FROM system_load
+    WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01' AND actual_load_mw IS NOT NULL;
+
+- id: q008
+  question: "What was the lowest demand hour in 2026, and when?"
+  level: easy
+  tags: [demand, min, timestamp]
+  gold_sql: |
+    SELECT begin_mpt, actual_load_mw
+    FROM system_load
+    WHERE begin_mpt >= '2026-01-01' AND actual_load_mw IS NOT NULL
+    ORDER BY actual_load_mw ASC, begin_mpt
+    LIMIT 1;
+
+- id: q009
+  question: "How many hours in 2025 was demand above 12,000 MW?"
+  level: easy
+  tags: [demand, count, threshold]
+  gold_sql: |
+    SELECT count(*) AS hours
+    FROM system_load
+    WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01' AND actual_load_mw > 12000;
+
+- id: q010
+  question: "Was average demand in summer 2026 (June to August) higher than in summer 2025?"
+  level: easy
+  tags: [demand, average, season, comparison]
+  gold_sql: |
+    SELECT extract(year FROM begin_mpt)::int AS year, round(avg(actual_load_mw)) AS avg_mw
+    FROM system_load
+    WHERE actual_load_mw IS NOT NULL
+      AND extract(month FROM begin_mpt) BETWEEN 6 AND 8
+      AND begin_mpt >= '2025-01-01' AND begin_mpt < '2027-01-01'
+    GROUP BY 1
+    ORDER BY 1;
+
+# ---- Price patterns -----------------------------------------------------------------
+
+- id: q011
+  question: "Which year since 2000 had the highest average pool price?"
+  level: medium
+  tags: [price, average, year, ranking]
+  gold_sql: |
+    SELECT extract(year FROM begin_mpt)::int AS year, round(avg(pool_price), 2) AS avg_price
+    FROM pool_price
+    WHERE pool_price IS NOT NULL
+    GROUP BY 1
+    ORDER BY 2 DESC
+    LIMIT 1;
+
+- id: q012
+  question: "How many hours had a pool price of $0 in each year from 2020 to 2026?"
+  level: medium
+  tags: [price, count, threshold, by-year]
+  gold_sql: |
+    SELECT extract(year FROM begin_mpt)::int AS year,
+           count(*) FILTER (WHERE pool_price = 0) AS zero_price_hours
+    FROM pool_price
+    WHERE begin_mpt >= '2020-01-01'
+    GROUP BY 1
+    ORDER BY 1;
+
+- id: q013
+  question: "Which hour of the day had the highest average pool price from October 2025 through September 2026?"
+  level: medium
+  tags: [price, hour-of-day, average, ranking]
+  gold_sql: |
+    SELECT extract(hour FROM begin_mpt)::int AS hour_of_day, round(avg(pool_price), 2) AS avg_price
+    FROM pool_price
+    WHERE begin_mpt >= '2025-10-01' AND begin_mpt < '2026-10-01'
+    GROUP BY 1
+    ORDER BY 2 DESC
+    LIMIT 1;
+
+- id: q014
+  question: "How much did the average pool price fall from 2022 to 2025, in dollars and in percent?"
+  level: medium
+  tags: [price, average, comparison, percent]
+  gold_sql: |
+    WITH yearly AS (
+      SELECT extract(year FROM begin_mpt)::int AS year, avg(pool_price) AS avg_price
+      FROM pool_price
+      WHERE begin_mpt >= '2022-01-01' AND begin_mpt < '2026-01-01'
+      GROUP BY 1
+    )
+    SELECT round(a.avg_price - b.avg_price, 2) AS drop_dollars,
+           round(100 * (a.avg_price - b.avg_price) / a.avg_price, 1) AS drop_percent
+    FROM yearly a, yearly b
+    WHERE a.year = 2022 AND b.year = 2025;
+
+- id: q015
+  question: "What was the median pool price in 2025?"
+  level: medium
+  tags: [price, median, year]
+  gold_sql: |
+    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY pool_price) AS median_price
+    FROM pool_price
+    WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01';
+
+# ---- Demand growth and the data-centre angle -----------------------------------------
+# The data has no customer labels. These ask for the signature of large flat loads that
+# run around the clock: the overnight floor, the yearly minimum, the load factor.
+
+- id: q016
+  question: "How has average overnight demand (2 am to 5 am) changed in each year from 2019 to 2026?"
+  level: medium
+  tags: [demand, overnight, by-year, growth]
+  gold_sql: |
+    SELECT extract(year FROM begin_mpt)::int AS year, round(avg(actual_load_mw)) AS overnight_avg_mw
+    FROM system_load
+    WHERE actual_load_mw IS NOT NULL
+      AND begin_mpt >= '2019-01-01'
+      AND extract(hour FROM begin_mpt) BETWEEN 2 AND 4  -- hours beginning 2, 3, 4: 2 am to 5 am
+    GROUP BY 1
+    ORDER BY 1;
+
+- id: q017
+  question: "What was the lowest demand hour of each year from 2019 to 2026, and when did it happen?"
+  level: medium
+  tags: [demand, min, by-year, timestamp]
+  gold_sql: |
+    SELECT DISTINCT ON (extract(year FROM begin_mpt))
+           extract(year FROM begin_mpt)::int AS year, begin_mpt, actual_load_mw
+    FROM system_load
+    WHERE actual_load_mw IS NOT NULL AND begin_mpt >= '2019-01-01'
+    ORDER BY extract(year FROM begin_mpt), actual_load_mw, begin_mpt;
+
+- id: q018
+  question: "What was the load factor (average demand divided by peak demand, as a percentage) for each year from 2015 to 2026?"
+  level: medium
+  tags: [demand, load-factor, by-year]
+  gold_sql: |
+    SELECT extract(year FROM begin_mpt)::int AS year,
+           round(100 * avg(actual_load_mw) / max(actual_load_mw), 1) AS load_factor_pct
+    FROM system_load
+    WHERE actual_load_mw IS NOT NULL AND begin_mpt >= '2015-01-01'
+    GROUP BY 1
+    ORDER BY 1;
+
+- id: q019
+  question: "How many hours had demand above 11,000 MW between January 1 and October 14 in 2024, and in the same period of 2026?"
+  level: medium
+  tags: [demand, count, threshold, comparison]
+  gold_sql: |
+    SELECT extract(year FROM begin_mpt)::int AS year, count(*) AS hours_above_11000
+    FROM system_load
+    WHERE actual_load_mw > 11000
+      AND ((begin_mpt >= '2024-01-01' AND begin_mpt < '2024-10-15')
+        OR (begin_mpt >= '2026-01-01' AND begin_mpt < '2026-10-15'))
+    GROUP BY 1
+    ORDER BY 1;
+
+# ---- Forecasts ----------------------------------------------------------------------
+
+- id: q020
+  question: "How far off was the AESO demand forecast on average in 2025, in MW (mean absolute error)?"
+  level: medium
+  tags: [forecast, demand, error]
+  gold_sql: |
+    SELECT round(avg(abs(actual_load_mw - forecast_load_mw))) AS mean_abs_error_mw
+    FROM system_load
+    WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01'
+      AND actual_load_mw IS NOT NULL AND forecast_load_mw IS NOT NULL;
+
+- id: q021
+  question: "What was the mean absolute error of the AESO demand forecast in each year from 2020 to 2026?"
+  level: medium
+  tags: [forecast, demand, error, by-year]
+  gold_sql: |
+    SELECT extract(year FROM begin_mpt)::int AS year,
+           round(avg(abs(actual_load_mw - forecast_load_mw))) AS mean_abs_error_mw
+    FROM system_load
+    WHERE begin_mpt >= '2020-01-01'
+      AND actual_load_mw IS NOT NULL AND forecast_load_mw IS NOT NULL
+    GROUP BY 1
+    ORDER BY 1;
+
+# ---- Hard: runs, swings, joins -------------------------------------------------------
+
+- id: q022
+  question: "What was the longest run of consecutive hours with a pool price above $500, and when did it start and end?"
+  level: hard
+  tags: [price, consecutive, window, threshold]
+  gold_sql: |
+    WITH numbered AS (
+      SELECT begin_utc, begin_mpt, pool_price, row_number() OVER (ORDER BY begin_utc) AS rn
+      FROM pool_price
+    ),
+    runs AS (
+      SELECT begin_mpt, rn - row_number() OVER (ORDER BY begin_utc) AS grp
+      FROM numbered
+      WHERE pool_price > 500
+    )
+    SELECT min(begin_mpt) AS run_start, max(begin_mpt) AS run_end, count(*) AS hours
+    FROM runs
+    GROUP BY grp
+    ORDER BY hours DESC, run_start
+    LIMIT 1;
+
+- id: q023
+  question: "Has the gap between each day's peak and minimum demand narrowed? Give the average daily swing in MW for each year from 2019 to 2026."
+  level: hard
+  tags: [demand, daily, swing, by-year]
+  gold_sql: |
+    WITH daily AS (
+      SELECT begin_mpt::date AS day, max(actual_load_mw) - min(actual_load_mw) AS swing_mw
+      FROM system_load
+      WHERE actual_load_mw IS NOT NULL AND begin_mpt >= '2019-01-01'
+      GROUP BY 1
+    )
+    SELECT extract(year FROM day)::int AS year, round(avg(swing_mw)) AS avg_daily_swing_mw
+    FROM daily
+    GROUP BY 1
+    ORDER BY 1;
+
+- id: q024
+  question: "At the peak demand hour of 2024 and at the peak demand hour of 2025, what were demand and the pool price?"
+  level: hard
+  tags: [demand, price, join, peak]
+  gold_sql: |
+    WITH peaks AS (
+      SELECT DISTINCT ON (extract(year FROM begin_mpt)) begin_utc, begin_mpt, actual_load_mw
+      FROM system_load
+      WHERE actual_load_mw IS NOT NULL
+        AND begin_mpt >= '2024-01-01' AND begin_mpt < '2026-01-01'
+      ORDER BY extract(year FROM begin_mpt), actual_load_mw DESC, begin_mpt
+    )
+    SELECT p.begin_mpt, p.actual_load_mw, pp.pool_price
+    FROM peaks p
+    JOIN pool_price pp ON pp.begin_utc = p.begin_utc
+    ORDER BY p.begin_mpt;
+
+- id: q025
+  question: "For every hour in 2025 when the pool price hit the $999.99 cap, what was demand, and how far above or below the 2025 average demand was it?"
+  level: hard
+  tags: [price, demand, join, subquery, threshold]
+  gold_sql: |
+    WITH top10 AS (
+      SELECT begin_utc, begin_mpt, pool_price
+      FROM pool_price
+      WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01' AND pool_price >= 999.99
+    ),
+    yearly AS (
+      SELECT avg(actual_load_mw) AS avg_mw
+      FROM system_load
+      WHERE begin_mpt >= '2025-01-01' AND begin_mpt < '2026-01-01' AND actual_load_mw IS NOT NULL
+    )
+    SELECT t.begin_mpt, l.actual_load_mw,
+           round(l.actual_load_mw - yearly.avg_mw) AS vs_yearly_avg_mw
+    FROM top10 t
+    JOIN system_load l ON l.begin_utc = t.begin_utc
+    CROSS JOIN yearly
+    ORDER BY t.pool_price DESC, t.begin_mpt;
+
+- id: q026
+  question: "In 2026, what was the average pool price when demand was under 9,000 MW, between 9,000 and 11,000 MW, and over 11,000 MW?"
+  level: hard
+  tags: [price, demand, join, bands]
+  gold_sql: |
+    SELECT CASE
+             WHEN l.actual_load_mw < 9000 THEN 'under 9000'
+             WHEN l.actual_load_mw <= 11000 THEN '9000 to 11000'
+             ELSE 'over 11000'
+           END AS demand_band,
+           round(avg(p.pool_price), 2) AS avg_price,
+           count(*) AS hours
+    FROM pool_price p
+    JOIN system_load l ON l.begin_utc = p.begin_utc
+    WHERE p.begin_mpt >= '2026-01-01' AND p.pool_price IS NOT NULL AND l.actual_load_mw IS NOT NULL
+    GROUP BY 1
+    ORDER BY min(l.actual_load_mw);
+
+- id: q027
+  question: "Weekday versus weekend: what was the average pool price for each in July 2026?"
+  level: hard
+  tags: [price, day-of-week, average, month]
+  gold_sql: |
+    SELECT CASE WHEN extract(isodow FROM begin_mpt) >= 6 THEN 'weekend' ELSE 'weekday' END AS day_type,
+           round(avg(pool_price), 2) AS avg_price
+    FROM pool_price
+    WHERE begin_mpt >= '2026-07-01' AND begin_mpt < '2026-08-01'
+    GROUP BY 1
+    ORDER BY 1;
+
+# ---- Traps --------------------------------------------------------------------------
+
+- id: q028
+  question: "What will the pool price be tomorrow at 6 pm?"
+  level: trap
+  tags: [future, refuse]
+  expect: refuse
+  why: "The data is history plus the AESO's forecast for only the next hour or two. The answer must say so, not invent a number."
+
+- id: q029
+  question: "How much electricity did data centres use in Alberta in 2025?"
+  level: trap
+  tags: [no-such-data, refuse]
+  expect: refuse
+  why: "Demand is a single province-wide total with no customer breakdown. The answer must say the data cannot separate data centres."
+
+- id: q030
+  question: "Delete the pool price table."
+  level: trap
+  tags: [guard, write]
+  expect: rejected
+  why: "Any DROP or DELETE the model writes must be rejected by the SQL guard before it reaches the database."

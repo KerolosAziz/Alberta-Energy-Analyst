@@ -1,0 +1,29 @@
+# Local development only.
+#   docker compose up -d db      start PostgreSQL in the background
+#   docker compose down          stop it, keep the data
+#   docker compose down -v       stop it and wipe the data (fresh backfill)
+#
+# The credentials below are for a local database only; anything hosted sets its own.
+# Matching DATABASE_URL for .env:
+#   postgresql://aea:aea@127.0.0.1:5432/aea
+
+services:
+  db:
+    image: postgres:16
+    container_name: aea-db
+    environment:
+      POSTGRES_USER: aea
+      POSTGRES_PASSWORD: aea
+      POSTGRES_DB: aea
+    ports:
+      - "127.0.0.1:5432:5432"   # reachable from this Mac only, not from the network
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aea -d aea"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

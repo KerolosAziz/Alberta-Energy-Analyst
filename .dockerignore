@@ -1,0 +1,16 @@
+# Keep secrets and local leftovers out of the image. The Dockerfile copies only what it needs.
+.env
+.env.*
+.git
+.github
+.claude
+CLAUDE.md
+.venv
+.ruff_cache
+**/__pycache__
+**/.DS_Store
+**/node_modules
+web/dist
+docs
+*.log
+*.dump

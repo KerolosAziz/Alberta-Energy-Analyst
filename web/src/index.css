@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/* Plain: a white page, square shapes and thin black rules. Colour only where it means something:
+   yellow for the Ask button, the current page and the guard; blue for links and chart bars; a heat
+   scale for prices. The device's own fonts, so nothing is downloaded. */
+:root {
+  color-scheme: light;
+  --page: #ffffff;
+  --wash: #f7f8fa;
+  --surface: #ffffff;
+  --ink: #111418;
+  --ink-2: #3d434d;
+  --muted: #636b78;
+  --grid: #eceef1;
+  --border: #e2e4e8;
+  --accent: #2952ff;
+  --accent-strong: #1e40e6;
+  --link: #1f45e0;
+  --sun: #ffd02e;
+  --sun-strong: #ffc300;
+  --sun-soft: #fff3c4;
+  --sun-ink: #5c3f00;
+  /* Hourly price bands, cheapest first, for the heatmap. */
+  --heat-0: #fff0b8;
+  --heat-1: #ffd766;
+  --heat-2: #ffae3d;
+  --heat-3: #ff7631;
+  --heat-4: #e23d2e;
+  --heat-5: #8e1b4e;
+  --heat-none: #f1f2f4;
+  /* SQL: dark text on a light panel, keywords in blue. */
+  --code-dim: #9aa1ac;
+  --code-key: #1f45e0;
+  --code-str: #a0461a;
+  --code-num: #b0185a;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-wash: var(--wash);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--border);
+  --color-link: var(--link);
+  --color-sun: var(--sun);
+  --color-sun-strong: var(--sun-strong);
+  --color-sun-soft: var(--sun-soft);
+  --color-sun-ink: var(--sun-ink);
+  --color-code-dim: var(--code-dim);
+  --color-code-key: var(--code-key);
+  --color-code-str: var(--code-str);
+  --color-code-num: var(--code-num);
+  /* SF Pro on Apple devices, Segoe UI on Windows, Roboto on Android; the same for code. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* The text sizes the site uses beyond Tailwind's own, named so each one is set here only. */
+  --text-code: 0.8125rem;
+  --text-label: 0.9375rem;
+  --text-label--line-height: 1.4;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.6;
+  --text-figure: 3.625rem;
+  --text-figure--line-height: 1.05;
+  --text-hero: 4.125rem;
+  --text-hero--line-height: 1.02;
+}
+
+/* The yellow bar under the current page in the top bar, and under the selected part. */
+@utility current-mark {
+  box-shadow: inset 0 -3px 0 var(--sun);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-page font-sans text-ink antialiased;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  summary:focus-visible {
+    @apply outline-2 outline-offset-2 outline-link;
+  }
+}
+
+/* Motion. Every effect below is switched off under prefers-reduced-motion at the end. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes progress {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* The hero text rises once on load. */
+.rise {
+  animation: rise 900ms ease-out 150ms both;
+}
+/* Four-parts section: the bar under the selected photo fills over one step; the caption fades. */
+.progress {
+  animation: progress linear both;
+}
+.fade-fast {
+  animation: fade-in 400ms ease-out both;
+}
+/* The square that blinks while an answer is being made. */
+.blink {
+  animation: blink 1.2s ease-in-out infinite;
+}
+/* Sections rise into view the first time they are scrolled to. */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 700ms ease-out,
+    transform 700ms ease-out;
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .progress,
+  .fade-fast,
+  .blink {
+    animation: none;
+  }
+  .progress {
+    width: 100%;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

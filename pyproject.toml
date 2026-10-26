@@ -1,0 +1,35 @@
+[project]
+name = "alberta-energy-analyst"
+version = "0.1.0"
+description = "Ask plain-English questions about Alberta's electricity market. Get an answer, a chart, and the SQL that produced it."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.2",
+    "httpx>=0.28.1",
+    "psycopg[binary]>=3.3.6",
+    "pyyaml>=6.0.3",
+    "sqlglot>=30.23.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+# No [build-system] on purpose: this repo is an application made of a few top-level
+# packages (ingest/, api/, evals/) and one module (router.py), not an installable library.
+# uv manages the virtualenv and lockfile; code runs from the repo root with
+# `uv run --env-file .env python -m ingest.run`.
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import sorting, UP modern syntax, B common bugs
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"api/prompt.py" = ["E501"]  # prompt text reads as prose; do not wrap it
