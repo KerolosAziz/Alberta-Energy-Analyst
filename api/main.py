@@ -62,7 +62,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Alberta Energy Analyst", lifespan=lifespan)
+# No /docs, /redoc or /openapi.json: the API is for this site's own pages.
+app = FastAPI(
+    title="Alberta Energy Analyst",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in CORS_ORIGINS.split(",") if o.strip()],
@@ -98,12 +105,27 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+# The pages load only their own files: no outside scripts, fonts or images. Inline styles are
+# allowed because index.html has a <style> block and the charts set style attributes.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
+    "base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+)
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # noqa: ANN001, ANN202
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    # Browsers ignore this over plain HTTP, so it only takes effect on the hosted HTTPS site.
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
     return response
 
 

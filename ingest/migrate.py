@@ -3,13 +3,15 @@
     uv run --env-file .env python -m ingest.migrate
 
 Applied file names are kept in schema_migrations. Each file runs in its own transaction.
-Afterwards the read-only role gets the password in DATABASE_URL_READONLY, so no password
-sits in db/ and a hosted database gets its own.
+Afterwards the read-only role gets the password in DATABASE_URL_READONLY, and the app role
+the one in DATABASE_URL_APP when that is set, so no password sits in db/ and a hosted
+database gets its own.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import psycopg
@@ -50,27 +52,35 @@ def migrate(conn: psycopg.Connection) -> list[str]:
     return applied
 
 
-def set_readonly_password(conn: psycopg.Connection) -> None:
-    """Give the read-only role the password in DATABASE_URL_READONLY (db/002 creates it with
-    none). Runs every time, so changing the URL changes the password."""
-    info = conninfo_to_dict(require_env("DATABASE_URL_READONLY"))
-    if not info.get("password"):
-        log.warning("DATABASE_URL_READONLY has no password; the read-only role keeps its own")
-        return
-    conn.execute(
-        sql.SQL("ALTER ROLE {} PASSWORD {}").format(
-            sql.Identifier(info["user"]), sql.Literal(info["password"])
+def set_role_passwords(conn: psycopg.Connection) -> None:
+    """Give the read-only role (db/002) the password in DATABASE_URL_READONLY and the app role
+    (db/004) the one in DATABASE_URL_APP, if set; both are created with none. Runs every time,
+    so changing a URL changes the password."""
+    urls = {
+        "DATABASE_URL_READONLY": require_env("DATABASE_URL_READONLY"),
+        "DATABASE_URL_APP": os.environ.get("DATABASE_URL_APP", "").strip(),
+    }
+    for name, url in urls.items():
+        if not url:
+            continue
+        info = conninfo_to_dict(url)
+        if not info.get("password"):
+            log.warning("%s has no password; %s keeps its own", name, info.get("user"))
+            continue
+        conn.execute(
+            sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                sql.Identifier(info["user"]), sql.Literal(info["password"])
+            )
         )
-    )
-    conn.commit()
-    log.info("password of %s set from DATABASE_URL_READONLY", info["user"])
+        conn.commit()
+        log.info("password of %s set from %s", info["user"], name)
 
 
 def main() -> None:
     setup_logging()
     with connect() as conn:
         applied = migrate(conn)
-        set_readonly_password(conn)
+        set_role_passwords(conn)
     log.info("%d migration(s) applied", len(applied))
 
 
