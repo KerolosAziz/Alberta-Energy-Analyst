@@ -13,13 +13,13 @@
 [![Gemini](https://img.shields.io/badge/model-Gemini-8E75B2?logo=googlegemini&logoColor=white)](router.py)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[How it works](#how-it-works) · [Quick start](#quick-start) · [SQL guard](#sql-guard) · [Evaluation](#evaluation) · [API](#api)
+**[Live site](https://alberta-energy-analyst.ashybeach-a3984fab.canadacentral.azurecontainerapps.io)** · [How it works](#how-it-works) · [Quick start](#quick-start) · [Deployment](#deployment) · [SQL guard](#sql-guard) · [Evaluation](#evaluation) · [API](#api)
 
 </div>
 
 The data is the AESO's hourly pool price and Alberta internal load (demand), actual and forecast, from January 2000 to the current hour, kept in PostgreSQL and refreshed every hour. A language model writes one SQL query per question. A guard decides whether that query may run. The result comes back as a short answer, a chart, and the query itself, so anyone can check it.
 
-**Accuracy:** 25 of 30 on a hand-written test set, latest full run ([score history](evals/history.md)) · **Model cost:** $0, on the Gemini free tier
+**Accuracy:** 25 of 30 on a hand-written test set, latest full run ([score history](evals/history.md)) · **Running cost:** $0, on Azure's free allowances and the Gemini free tier
 
 ## Highlights
 
@@ -88,6 +88,20 @@ uv run --env-file .env uvicorn api.main:app
 ```
 
 Open http://localhost:8000. The Info page is at `/`, the Ask page at `/ask`, and one process serves the site and the API. While it runs, the API pulls new AESO hours at start and at 5 past every hour. Live reload, every optional setting, and the precompute and scoring commands are in [docs/running-locally.md](docs/running-locally.md).
+
+## Deployment
+
+The [live site](https://alberta-energy-analyst.ashybeach-a3984fab.canadacentral.azurecontainerapps.io) runs on Azure in Canada Central, inside the free allowances:
+
+| Part | Runs on |
+|---|---|
+| Site and API | Azure Container Apps: one container, 0.25 vCPU and 0.5 GiB, scaled to zero when idle (the first visit after a quiet spell waits a few seconds) and to at most one replica |
+| Hourly data pull | A Container Apps job on a schedule (`5 * * * *`) running `python -m ingest.run` from the same image |
+| Database | Azure Database for PostgreSQL Flexible Server, Burstable B1ms, 32 GB |
+| Image | Built by GitHub Actions on every push to `main` ([`image.yml`](.github/workflows/image.yml)), stored on GitHub Container Registry, and deployed by digest so a re-pushed tag can never change what runs |
+| Model | Gemini free tier |
+
+The app and the job connect as `app_writer` ([`db/004_app_writer.sql`](db/004_app_writer.sql)), which can upsert the market tables and keep the app's own tables but cannot delete data, change the schema or create roles. Model-written SQL still runs as `app_readonly`. `ingest.migrate`, run once with the admin login, sets both roles' passwords from `DATABASE_URL_APP` and `DATABASE_URL_READONLY`. Keys and database addresses are Container Apps secrets, never part of the image; container logs are off. The app sends a Content-Security-Policy that allows only its own files, plus HSTS and a Permissions-Policy, and serves HTTPS only.
 
 ## SQL guard
 
@@ -218,6 +232,7 @@ cd web && npm run lint && npm run build
 - Free-tier model quotas are small, so the site leans on the cache, the precomputed examples, the daily visitor limit and bring-your-own-key.
 - The data has only price and total demand. Generation by fuel type and per-customer data are not in the API's history, so questions about them are refused.
 - Table-valued functions such as `generate_series` are rejected by the guard.
+- The hosted app scales to zero, so the first visit after a quiet spell waits a few seconds while it starts.
 - The AESO's [terms](https://www.aeso.ca/legal) allow non-commercial, personal or educational use and do not address public display; check them before hosting this for others.
 
 ## Credits
